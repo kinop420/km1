@@ -1,0 +1,809 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="KM-1">
+<meta name="theme-color" content="#0E1116">
+<title>KM-1 マスタリング・スタジオ</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/lamejs/1.2.0/lame.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+  :root{
+    --bg:#0E1116;
+    --panel:#161C27;
+    --panel2:#1C2331;
+    --line:#2A3345;
+    --amber:#F2B441;
+    --amber-dim:#8A6A2A;
+    --hot:#E8684A;
+    --ok:#7BC98A;
+    --text:#EDE7DA;
+    --muted:#7E879A;
+    --mono:'SF Mono',ui-monospace,'Courier New',monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  html,body{background:var(--bg);color:var(--text);font-family:-apple-system,'Hiragino Kaku Gothic ProN','Hiragino Sans','Noto Sans JP',sans-serif;min-height:100%}
+  body{padding:0 0 60px 0}
+  .wrap{max-width:520px;margin:0 auto;padding:0 16px}
+
+  /* ===== header ===== */
+  header{padding:calc(26px + env(safe-area-inset-top)) 0 18px 0;border-bottom:1px solid var(--line);margin-bottom:18px}
+  .unit-label{display:flex;align-items:baseline;gap:10px}
+  .unit-label .model{font-family:var(--mono);font-size:26px;font-weight:700;letter-spacing:.08em;color:var(--amber)}
+  .unit-label .name{font-size:13px;color:var(--muted);letter-spacing:.14em}
+  .unit-sub{margin-top:6px;font-size:11px;color:var(--muted);letter-spacing:.06em}
+  .lamp{display:inline-block;width:7px;height:7px;border-radius:50%;background:#3A4356;margin-right:6px;vertical-align:1px}
+  .lamp.on{background:var(--amber);box-shadow:0 0 8px rgba(242,180,65,.7)}
+
+  /* ===== panels ===== */
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:14px}
+  .panel h2{font-size:11px;font-weight:600;letter-spacing:.18em;color:var(--muted);margin-bottom:12px}
+  .panel h2 .tag{color:var(--amber);margin-right:6px;font-family:var(--mono)}
+
+  /* ===== upload ===== */
+  .drop{border:1.5px dashed var(--line);border-radius:10px;padding:34px 16px;text-align:center;color:var(--muted);font-size:14px;cursor:pointer;transition:border-color .2s}
+  .drop:active{border-color:var(--amber)}
+  .drop strong{display:block;color:var(--text);font-size:15px;margin-bottom:6px}
+  .drop .fmt{font-family:var(--mono);font-size:11px;margin-top:8px;color:var(--amber-dim)}
+  input[type=file]{display:none}
+
+  /* ===== file info ===== */
+  .fileinfo{display:none}
+  .fname{font-size:14px;font-weight:600;word-break:break-all;margin-bottom:10px}
+  .specs{display:flex;gap:14px;flex-wrap:wrap;font-family:var(--mono);font-size:11px;color:var(--muted)}
+  .specs b{color:var(--text);font-weight:500}
+  canvas#wave{width:100%;height:64px;display:block;margin-top:12px;border-radius:6px;background:var(--panel2)}
+
+  /* ===== the meter (signature) ===== */
+  .meter-box{display:none;background:linear-gradient(180deg,#141922 0%,#10151E 100%);border:1px solid var(--line);border-radius:10px;padding:18px 16px 16px;margin-bottom:14px;position:relative;overflow:hidden}
+  .meter-box::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse 70% 60% at 50% 0%,rgba(242,180,65,.06),transparent);pointer-events:none}
+  .meter-title{font-size:10px;letter-spacing:.22em;color:var(--muted);margin-bottom:10px}
+  .lufs-row{display:flex;align-items:baseline;justify-content:space-between}
+  .lufs-big{font-family:var(--mono);font-size:44px;font-weight:700;color:var(--amber);text-shadow:0 0 18px rgba(242,180,65,.35);line-height:1}
+  .lufs-big small{font-size:14px;color:var(--muted);font-weight:400;margin-left:4px;text-shadow:none}
+  .peak-read{font-family:var(--mono);font-size:13px;color:var(--muted);text-align:right}
+  .peak-read b{color:var(--text)}
+  .scale{position:relative;height:26px;margin-top:14px}
+  .scale-track{position:absolute;top:10px;left:0;right:0;height:6px;border-radius:3px;background:#232B3A}
+  .scale-fill{position:absolute;top:10px;left:0;height:6px;border-radius:3px;background:linear-gradient(90deg,var(--amber-dim),var(--amber));width:0%;transition:width .6s ease}
+  .scale-target{position:absolute;top:5px;width:2px;height:16px;background:var(--text);opacity:.85}
+  .scale-target::after{content:attr(data-l);position:absolute;top:-12px;left:50%;transform:translateX(-50%);font-family:var(--mono);font-size:9px;color:var(--muted);white-space:nowrap}
+  .scale-labels{position:absolute;top:20px;left:0;right:0;display:flex;justify-content:space-between;font-family:var(--mono);font-size:9px;color:#4A5468}
+
+  /* ===== controls ===== */
+  .ctl{margin-bottom:16px}
+  .ctl:last-child{margin-bottom:0}
+  .ctl label{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:7px}
+  .ctl label .val{font-family:var(--mono);color:var(--amber)}
+  select,button{font-family:inherit}
+  select{width:100%;background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:11px 12px;font-size:14px;appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg width='10' height='6' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%237E879A'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center}
+  input[type=range]{width:100%;-webkit-appearance:none;background:transparent;height:28px}
+  input[type=range]::-webkit-slider-runnable-track{height:5px;border-radius:3px;background:#232B3A}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;border-radius:50%;background:var(--text);border:5px solid var(--panel);margin-top:-8.5px;box-shadow:0 1px 4px rgba(0,0,0,.5)}
+  .eq-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+  .eq-grid .ctl label{flex-direction:column;gap:2px}
+
+  /* ===== buttons ===== */
+  .btn{display:block;width:100%;border:none;border-radius:9px;padding:15px;font-size:15px;font-weight:600;cursor:pointer;letter-spacing:.04em}
+  .btn-main{background:var(--amber);color:#14100A}
+  .btn-main:active{background:#D89C2E}
+  .btn-main:disabled{background:#3A4152;color:#6B7488}
+  .btn-sub{background:var(--panel2);color:var(--text);border:1px solid var(--line);margin-top:10px}
+  .btn-sub:active{background:#232B3A}
+  .btn-sub:disabled{color:#4A5468}
+  .btnrow{display:flex;gap:10px;margin-top:10px}
+  .btnrow .btn{margin-top:0}
+
+  /* ===== progress ===== */
+  .prog{display:none;margin-top:14px}
+  .prog-label{font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:6px;display:flex;justify-content:space-between}
+  .prog-track{height:5px;border-radius:3px;background:#232B3A;overflow:hidden}
+  .prog-fill{height:100%;width:0%;background:var(--amber);border-radius:3px;transition:width .25s}
+
+  /* ===== result ===== */
+  #resultPanel{display:none}
+  .ab{display:flex;gap:8px;margin-bottom:12px}
+  .ab button{flex:1;padding:10px;border-radius:8px;border:1px solid var(--line);background:var(--panel2);color:var(--muted);font-size:13px;font-weight:600;cursor:pointer}
+  .ab button.on{background:var(--amber);color:#14100A;border-color:var(--amber)}
+  .play{display:flex;align-items:center;gap:12px}
+  .play-btn{width:52px;height:52px;min-width:52px;border-radius:50%;border:1px solid var(--line);background:var(--panel2);color:var(--text);font-size:18px;cursor:pointer}
+  .play-btn:active{background:#232B3A}
+  .play-track{flex:1;height:5px;border-radius:3px;background:#232B3A;position:relative;overflow:hidden}
+  .play-fill{position:absolute;left:0;top:0;height:100%;width:0%;background:var(--amber)}
+  .play-time{font-family:var(--mono);font-size:11px;color:var(--muted);min-width:74px;text-align:right}
+  .note{font-size:11px;color:var(--muted);line-height:1.7;margin-top:10px}
+  .status{font-size:12px;color:var(--muted);margin-top:12px;line-height:1.6;display:none}
+  .status.err{color:var(--hot)}
+
+  footer{text-align:center;font-family:var(--mono);font-size:9px;color:#3E475A;letter-spacing:.2em;margin-top:26px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="unit-label">
+    <span class="model">KM-1</span>
+    <span class="name">マスタリング・スタジオ</span>
+  </div>
+  <div class="unit-sub"><span class="lamp" id="lamp"></span>Suno音源 → 配信用マスター（WAV）＋ CapCut用15秒分割（MP3）</div>
+</header>
+
+<!-- upload -->
+<div class="panel" id="uploadPanel">
+  <h2><span class="tag">01</span>音源を読み込む</h2>
+  <div class="drop" id="drop">
+    <strong>タップしてファイルを選択</strong>
+    曲をひとつ選んでください
+    <div class="fmt">MP3 / WAV / M4A</div>
+  </div>
+  <input type="file" id="fileInput">
+  <div class="fileinfo" id="fileinfo">
+    <div class="fname" id="fname"></div>
+    <div class="specs">
+      <span>長さ <b id="fdur">--</b></span>
+      <span>ch <b id="fch">--</b></span>
+      <span>元SR <b id="fsr">--</b></span>
+    </div>
+    <canvas id="wave"></canvas>
+  </div>
+</div>
+
+<!-- meter -->
+<div class="meter-box" id="meterBox">
+  <div class="meter-title">INTEGRATED LOUDNESS</div>
+  <div class="lufs-row">
+    <div class="lufs-big"><span id="lufsVal">--.-</span><small>LUFS</small></div>
+    <div class="peak-read">ピーク<br><b id="peakVal">--.- dB</b></div>
+  </div>
+  <div class="scale">
+    <div class="scale-track"></div>
+    <div class="scale-fill" id="scaleFill"></div>
+    <div class="scale-target" id="scaleTarget" data-l="目標"></div>
+    <div class="scale-labels"><span>-30</span><span>-24</span><span>-18</span><span>-12</span><span>-6</span><span>0</span></div>
+  </div>
+</div>
+
+<!-- controls -->
+<div class="panel" id="ctlPanel" style="display:none">
+  <h2><span class="tag">02</span>マスタリング設定</h2>
+
+  <div class="ctl">
+    <label>ターゲットラウドネス <span class="val" id="targetLabel">-14.0 LUFS</span></label>
+    <select id="target">
+      <option value="-14" selected>-14 LUFS（Spotify / YouTube）</option>
+      <option value="-16">-16 LUFS（Apple Music）</option>
+      <option value="-11">-11 LUFS（やや大きめ）</option>
+      <option value="-9">-9 LUFS（ラウド系）</option>
+    </select>
+  </div>
+
+  <div class="ctl">
+    <label>コンプレッサー</label>
+    <select id="comp">
+      <option value="off">オフ</option>
+      <option value="natural" selected>ナチュラル（軽くまとめる）</option>
+      <option value="standard">スタンダード（密度を上げる）</option>
+      <option value="punch">パンチ（強め・前に出す）</option>
+    </select>
+  </div>
+
+  <div class="ctl">
+    <label>質感プリセット</label>
+    <select id="texPreset">
+      <option value="off" selected>オフ</option>
+      <option value="warm">ウォーム（温かみ）</option>
+      <option value="rich">リッチ（厚みと艶）</option>
+      <option value="luxury">ラグジュアリー（重厚・深み）</option>
+    </select>
+  </div>
+
+  <div class="eq-grid" style="grid-template-columns:1fr 1fr">
+    <div class="ctl">
+      <label>厚み（サチュレーション）<span class="val" id="satVal">0</span></label>
+      <input type="range" id="sat" min="0" max="10" step="0.5" value="0">
+    </div>
+    <div class="ctl">
+      <label>深み（サブ低域）<span class="val" id="subVal">+0 dB</span></label>
+      <input type="range" id="sub" min="0" max="6" step="0.5" value="0">
+    </div>
+    <div class="ctl">
+      <label>艶（エア）<span class="val" id="airVal">+0 dB</span></label>
+      <input type="range" id="air" min="0" max="6" step="0.5" value="0">
+    </div>
+    <div class="ctl">
+      <label>広がり（ステレオ幅）<span class="val" id="widthVal">100%</span></label>
+      <input type="range" id="width" min="100" max="140" step="5" value="100">
+    </div>
+  </div>
+
+  <div class="eq-grid">
+    <div class="ctl">
+      <label>低域<span class="val" id="eqLowVal">0 dB</span></label>
+      <input type="range" id="eqLow" min="-6" max="6" step="0.5" value="0">
+    </div>
+    <div class="ctl">
+      <label>中域<span class="val" id="eqMidVal">0 dB</span></label>
+      <input type="range" id="eqMid" min="-6" max="6" step="0.5" value="0">
+    </div>
+    <div class="ctl">
+      <label>高域<span class="val" id="eqHighVal">0 dB</span></label>
+      <input type="range" id="eqHigh" min="-6" max="6" step="0.5" value="0">
+    </div>
+  </div>
+
+  <button class="btn btn-main" id="processBtn" style="margin-top:6px">マスタリング実行</button>
+
+  <div class="prog" id="prog">
+    <div class="prog-label"><span id="progText">処理中…</span><span id="progPct">0%</span></div>
+    <div class="prog-track"><div class="prog-fill" id="progFill"></div></div>
+  </div>
+  <div class="status" id="status"></div>
+</div>
+
+<!-- result -->
+<div class="panel" id="resultPanel">
+  <h2><span class="tag">03</span>試聴と書き出し</h2>
+
+  <div class="ab">
+    <button id="abBefore">元の音源</button>
+    <button id="abAfter" class="on">マスター後</button>
+  </div>
+
+  <div class="play">
+    <button class="play-btn" id="playBtn">▶</button>
+    <div class="play-track" id="seekTrack"><div class="play-fill" id="playFill"></div></div>
+    <div class="play-time" id="playTime">0:00 / 0:00</div>
+  </div>
+
+  <button class="btn btn-main" id="dlWav" style="margin-top:16px">WAV を保存（配信用マスター）</button>
+  <button class="btn btn-sub" id="dlSeg">15秒分割 MP3 を保存（ZIP）</button>
+
+  <div class="prog" id="segProg">
+    <div class="prog-label"><span id="segProgText">MP3エンコード中…</span><span id="segProgPct">0%</span></div>
+    <div class="prog-track"><div class="prog-fill" id="segProgFill"></div></div>
+  </div>
+
+  <div class="note">
+    ・WAV は 16bit / 44.1kHz。DistroKid にそのままアップロードできます。<br>
+    ・分割 MP3 は 320kbps。ZIP を「ファイル」アプリで解凍して CapCut に読み込んでください。<br>
+    ・保存先は iPhone の「ファイル」→ ダウンロードです。
+  </div>
+</div>
+
+<footer>KM-1 // BROWSER MASTERING UNIT // 44.1K</footer>
+</div>
+
+<script>
+(function(){
+'use strict';
+
+// ---------- state ----------
+var origBuffer = null;      // decoded original AudioBuffer
+var masterBuffer = null;    // rendered mastered AudioBuffer (44.1k stereo)
+var origLufs = null, finalLufs = null;
+var baseName = 'master';
+var audioCtx = null;
+
+// playback state
+var playing = false, playSrc = null, playStartCtxTime = 0, playOffset = 0, playMode = 'after', rafId = null;
+
+// ---------- helpers ----------
+function $(id){ return document.getElementById(id); }
+function getCtx(){
+  if(!audioCtx){ audioCtx = new (window.AudioContext||window.webkitAudioContext)(); }
+  if(audioCtx.state === 'suspended'){ audioCtx.resume(); }
+  return audioCtx;
+}
+function fmtTime(s){
+  s = Math.max(0, s|0);
+  return Math.floor(s/60) + ':' + ('0'+(s%60)).slice(-2);
+}
+function setStatus(msg, isErr){
+  var el = $('status');
+  el.style.display = msg ? 'block' : 'none';
+  el.textContent = msg || '';
+  el.className = 'status' + (isErr ? ' err' : '');
+}
+function yieldUI(){ return new Promise(function(r){ setTimeout(r, 0); }); }
+
+// ---------- upload ----------
+$('drop').addEventListener('click', function(){ getCtx(); $('fileInput').click(); });
+$('fileInput').addEventListener('change', function(e){
+  var f = e.target.files[0];
+  if(f) loadFile(f);
+});
+
+function loadFile(file){
+  setStatus('');
+  baseName = file.name.replace(/\.[^.]+$/, '');
+  $('fname').textContent = file.name;
+  var reader = new FileReader();
+  reader.onload = function(){
+    getCtx().decodeAudioData(reader.result, function(buf){
+      origBuffer = buf;
+      masterBuffer = null;
+      $('fileinfo').style.display = 'block';
+      $('fdur').textContent = fmtTime(buf.duration);
+      $('fch').textContent = buf.numberOfChannels === 1 ? 'モノ' : 'ステレオ';
+      $('fsr').textContent = (buf.sampleRate/1000).toFixed(1) + 'k';
+      drawWave(buf);
+      $('ctlPanel').style.display = 'block';
+      $('meterBox').style.display = 'block';
+      $('resultPanel').style.display = 'none';
+      $('lamp').classList.add('on');
+      stopPlayback();
+      // measure original loudness
+      $('lufsVal').textContent = '--.-';
+      $('peakVal').textContent = '--.- dB';
+      measureLUFS(buf).then(function(l){
+        origLufs = l;
+        showMeter(l, samplePeakDb(buf));
+      });
+    }, function(){
+      setStatus('このファイルをデコードできませんでした。MP3 か WAV を試してください。', true);
+    });
+  };
+  reader.onerror = function(){ setStatus('ファイルを読み込めませんでした。', true); };
+  reader.readAsArrayBuffer(file);
+}
+
+function drawWave(buf){
+  var cv = $('wave');
+  var dpr = window.devicePixelRatio || 1;
+  var w = cv.clientWidth, h = 64;
+  cv.width = w*dpr; cv.height = h*dpr;
+  var g = cv.getContext('2d');
+  g.scale(dpr, dpr);
+  g.clearRect(0,0,w,h);
+  var data = buf.getChannelData(0);
+  var step = Math.max(1, Math.floor(data.length / w));
+  g.strokeStyle = 'rgba(242,180,65,0.75)';
+  g.lineWidth = 1;
+  g.beginPath();
+  for(var x=0; x<w; x++){
+    var mn=1, mx=-1;
+    var s = x*step, e = Math.min(data.length, s+step);
+    for(var i=s;i<e;i++){ var v=data[i]; if(v<mn)mn=v; if(v>mx)mx=v; }
+    g.moveTo(x+0.5, h/2 - mx*(h/2-3));
+    g.lineTo(x+0.5, h/2 - mn*(h/2-3));
+  }
+  g.stroke();
+}
+
+// ---------- meter ----------
+function showMeter(lufs, peakDb){
+  $('lufsVal').textContent = (lufs<=-70) ? '-∞' : lufs.toFixed(1);
+  $('peakVal').textContent = peakDb.toFixed(1) + ' dB';
+  // scale: -30 .. 0
+  var pct = Math.max(0, Math.min(100, (lufs + 30) / 30 * 100));
+  $('scaleFill').style.width = pct + '%';
+  positionTarget();
+}
+function positionTarget(){
+  var t = parseFloat($('target').value);
+  var pct = Math.max(0, Math.min(100, (t + 30) / 30 * 100));
+  $('scaleTarget').style.left = 'calc(' + pct + '% - 1px)';
+  $('scaleTarget').setAttribute('data-l', t.toFixed(0));
+}
+
+function samplePeakDb(buf){
+  var p = 0;
+  for(var c=0;c<buf.numberOfChannels;c++){
+    var d = buf.getChannelData(c);
+    for(var i=0;i<d.length;i+=4){ var a=Math.abs(d[i]); if(a>p)p=a; }
+  }
+  return 20*Math.log10(p+1e-9);
+}
+
+// ---------- LUFS (ITU-R BS.1770, gated) ----------
+function measureLUFS(buffer){
+  var SR = 48000;
+  var len = Math.ceil(buffer.duration * SR);
+  var off = new OfflineAudioContext(buffer.numberOfChannels, len, SR);
+  var src = off.createBufferSource(); src.buffer = buffer;
+  var f1 = off.createIIRFilter(
+    [1.53512485958697, -2.69169618940638, 1.19839281085285],
+    [1, -1.69065929318241, 0.73248077421585]);
+  var f2 = off.createIIRFilter(
+    [1.0, -2.0, 1.0],
+    [1, -1.99004745483398, 0.99007225036621]);
+  src.connect(f1); f1.connect(f2); f2.connect(off.destination);
+  src.start();
+  return off.startRendering().then(function(r){
+    var block = Math.round(0.4*SR), hop = Math.round(0.1*SR);
+    var chs = [];
+    for(var c=0;c<r.numberOfChannels;c++) chs.push(r.getChannelData(c));
+    var blocks = [];
+    for(var st=0; st+block<=r.length; st+=hop){
+      var sum = 0;
+      for(var ci=0;ci<chs.length;ci++){
+        var d = chs[ci], s = 0;
+        for(var i=st;i<st+block;i++){ var v=d[i]; s += v*v; }
+        sum += s/block;
+      }
+      var l = -0.691 + 10*Math.log10(sum + 1e-12);
+      blocks.push([l, sum]);
+    }
+    var pass = blocks.filter(function(b){ return b[0] > -70; });
+    if(!pass.length) return -70;
+    var mean = pass.reduce(function(a,b){ return a+b[1]; }, 0)/pass.length;
+    var rel = -0.691 + 10*Math.log10(mean) - 10;
+    pass = pass.filter(function(b){ return b[0] > rel; });
+    if(!pass.length) return -70;
+    mean = pass.reduce(function(a,b){ return a+b[1]; }, 0)/pass.length;
+    return -0.691 + 10*Math.log10(mean);
+  });
+}
+
+// ---------- controls ----------
+['eqLow','eqMid','eqHigh'].forEach(function(id){
+  $(id).addEventListener('input', function(){
+    var v = parseFloat($(id).value);
+    $(id+'Val').textContent = (v>0?'+':'') + v + ' dB';
+  });
+});
+function updateTexLabels(){
+  $('satVal').textContent = parseFloat($('sat').value).toFixed(1);
+  $('subVal').textContent = '+' + parseFloat($('sub').value) + ' dB';
+  $('airVal').textContent = '+' + parseFloat($('air').value) + ' dB';
+  $('widthVal').textContent = $('width').value + '%';
+}
+['sat','sub','air','width'].forEach(function(id){
+  $(id).addEventListener('input', updateTexLabels);
+});
+var TEX_PRESETS = {
+  off:    {sat:0,   sub:0,   air:0,   width:100},
+  warm:   {sat:2,   sub:1.5, air:0.5, width:105},
+  rich:   {sat:3.5, sub:2.5, air:1.5, width:115},
+  luxury: {sat:5,   sub:3.5, air:2.5, width:125}
+};
+$('texPreset').addEventListener('change', function(){
+  var p = TEX_PRESETS[$('texPreset').value];
+  $('sat').value = p.sat; $('sub').value = p.sub;
+  $('air').value = p.air; $('width').value = p.width;
+  updateTexLabels();
+});
+updateTexLabels();
+$('target').addEventListener('change', function(){
+  $('targetLabel').textContent = parseFloat($('target').value).toFixed(1) + ' LUFS';
+  positionTarget();
+});
+
+// ---------- processing ----------
+var COMP_PRESETS = {
+  natural:  { threshold:-18, knee:12, ratio:2,   attack:0.02,  release:0.25 },
+  standard: { threshold:-22, knee:8,  ratio:3,   attack:0.01,  release:0.2  },
+  punch:    { threshold:-26, knee:4,  ratio:4.5, attack:0.004, release:0.15 }
+};
+
+function buildChain(off, src, opts, gainDb, withLimiter){
+  var node = src;
+  var low = off.createBiquadFilter(); low.type='lowshelf'; low.frequency.value=110; low.gain.value=opts.eqLow;
+  var mid = off.createBiquadFilter(); mid.type='peaking'; mid.frequency.value=2500; mid.Q.value=0.9; mid.gain.value=opts.eqMid;
+  var high = off.createBiquadFilter(); high.type='highshelf'; high.frequency.value=9000; high.gain.value=opts.eqHigh;
+  node.connect(low); low.connect(mid); mid.connect(high); node = high;
+  // 質感: サブ低域・エア
+  if(opts.sub > 0){
+    var subF = off.createBiquadFilter(); subF.type='lowshelf'; subF.frequency.value=60; subF.gain.value=opts.sub;
+    node.connect(subF); node = subF;
+  }
+  if(opts.air > 0){
+    var airF = off.createBiquadFilter(); airF.type='highshelf'; airF.frequency.value=13000; airF.gain.value=opts.air;
+    node.connect(airF); node = airF;
+  }
+  // サチュレーション（厚み）— 低域は歪ませないよう帯域分割
+  if(opts.sat > 0){
+    var xf = 180;
+    var lpA = off.createBiquadFilter(); lpA.type='lowpass'; lpA.frequency.value=xf; lpA.Q.value=0.7071;
+    var lpB = off.createBiquadFilter(); lpB.type='lowpass'; lpB.frequency.value=xf; lpB.Q.value=0.7071;
+    var hpA = off.createBiquadFilter(); hpA.type='highpass'; hpA.frequency.value=xf; hpA.Q.value=0.7071;
+    var hpB = off.createBiquadFilter(); hpB.type='highpass'; hpB.frequency.value=xf; hpB.Q.value=0.7071;
+    var shaper = off.createWaveShaper();
+    var d = 1 + opts.sat * 0.6, n = 4096, curve = new Float32Array(n), norm = Math.tanh(d);
+    for(var i=0;i<n;i++){ var x = i/(n-1)*2 - 1; curve[i] = Math.tanh(d*x)/norm; }
+    shaper.curve = curve; shaper.oversample = '4x';
+    var satSum = off.createGain();
+    node.connect(lpA); lpA.connect(lpB); lpB.connect(satSum);
+    node.connect(hpA); hpA.connect(hpB); hpB.connect(shaper); shaper.connect(satSum);
+    node = satSum;
+  }
+  if(opts.comp !== 'off'){
+    var p = COMP_PRESETS[opts.comp];
+    var comp = off.createDynamicsCompressor();
+    comp.threshold.value=p.threshold; comp.knee.value=p.knee; comp.ratio.value=p.ratio;
+    comp.attack.value=p.attack; comp.release.value=p.release;
+    node.connect(comp); node = comp;
+  }
+  // ステレオ幅 (M/S処理)
+  if(opts.width && Math.abs(opts.width - 1) > 0.001){
+    var up = off.createGain(); up.channelCount = 2; up.channelCountMode = 'explicit'; up.channelInterpretation = 'speakers';
+    var sp = off.createChannelSplitter(2);
+    var mg2 = off.createChannelMerger(2);
+    var mL = off.createGain(); mL.gain.value = 0.5;
+    var mR = off.createGain(); mR.gain.value = 0.5;
+    var sL = off.createGain(); sL.gain.value = 0.5 * opts.width;
+    var sR = off.createGain(); sR.gain.value = -0.5 * opts.width;
+    var mSum = off.createGain(), sSum = off.createGain();
+    var sInv = off.createGain(); sInv.gain.value = -1;
+    node.connect(up); up.connect(sp);
+    sp.connect(mL, 0); sp.connect(mR, 1); mL.connect(mSum); mR.connect(mSum);
+    sp.connect(sL, 0); sp.connect(sR, 1); sL.connect(sSum); sR.connect(sSum);
+    mSum.connect(mg2, 0, 0); sSum.connect(mg2, 0, 0);
+    mSum.connect(mg2, 0, 1); sSum.connect(sInv); sInv.connect(mg2, 0, 1);
+    node = mg2;
+  }
+  var g = off.createGain(); g.gain.value = Math.pow(10, gainDb/20);
+  node.connect(g); node = g;
+  if(withLimiter){
+    var lim = off.createDynamicsCompressor();
+    lim.threshold.value=-3; lim.knee.value=0; lim.ratio.value=20;
+    lim.attack.value=0.001; lim.release.value=0.05;
+    node.connect(lim); node = lim;
+    // 最終セーフティ：ソフトクリップで音割れ（ハードクリップ）を防止
+    var ceilLin = Math.pow(10, -1/20), kneeA = 0.5;
+    var sc = off.createWaveShaper();
+    var n2 = 8192, c2 = new Float32Array(n2);
+    for(var j=0;j<n2;j++){
+      var x2 = j/(n2-1)*2 - 1;
+      var ax = Math.abs(x2);
+      var y = (ax <= kneeA) ? ax : kneeA + (ceilLin - kneeA) * Math.tanh((ax - kneeA)/(ceilLin - kneeA));
+      c2[j] = (x2 < 0 ? -y : y);
+    }
+    sc.curve = c2; sc.oversample = '4x';
+    node.connect(sc); node = sc;
+  }
+  node.connect(off.destination);
+}
+
+function renderPass(buffer, opts, gainDb, withLimiter){
+  var SR = 44100;
+  var len = Math.ceil(buffer.duration * SR);
+  var off = new OfflineAudioContext(2, len, SR);
+  var src = off.createBufferSource(); src.buffer = buffer;
+  buildChain(off, src, opts, gainDb, withLimiter);
+  src.start();
+  return off.startRendering();
+}
+
+function setProg(pct, text){
+  $('prog').style.display = 'block';
+  $('progFill').style.width = pct + '%';
+  $('progPct').textContent = pct + '%';
+  if(text) $('progText').textContent = text;
+}
+
+$('processBtn').addEventListener('click', function(){
+  if(!origBuffer) return;
+  stopPlayback();
+  var btn = $('processBtn');
+  btn.disabled = true;
+  setStatus('');
+  var opts = {
+    eqLow: parseFloat($('eqLow').value),
+    eqMid: parseFloat($('eqMid').value),
+    eqHigh: parseFloat($('eqHigh').value),
+    comp: $('comp').value,
+    sat: parseFloat($('sat').value),
+    sub: parseFloat($('sub').value),
+    air: parseFloat($('air').value),
+    width: parseFloat($('width').value) / 100
+  };
+  var target = parseFloat($('target').value);
+
+  setProg(8, '解析パス（EQ・コンプ適用後の音量を測定）…');
+  renderPass(origBuffer, opts, 0, false).then(function(pre){
+    setProg(35, 'ラウドネス測定中…');
+    return measureLUFS(pre);
+  }).then(function(preLufs){
+    var gainDb = target - preLufs;
+    if(gainDb > 24) gainDb = 24; // safety
+    setProg(55, 'ゲイン調整＋リミッター適用（' + (gainDb>=0?'+':'') + gainDb.toFixed(1) + ' dB）…');
+    return renderPass(origBuffer, opts, gainDb, true);
+  }).then(function(rendered){
+    masterBuffer = rendered;
+    setProg(80, '仕上がりを検証中…');
+    return measureLUFS(rendered);
+  }).then(function(fl){
+    finalLufs = fl;
+    setProg(100, '完了');
+    showMeter(fl, samplePeakDb(masterBuffer));
+    $('resultPanel').style.display = 'block';
+    playMode = 'after';
+    $('abAfter').classList.add('on');
+    $('abBefore').classList.remove('on');
+    playOffset = 0;
+    updatePlayUI();
+    var diff = Math.abs(fl - target);
+    setStatus('マスタリング完了：' + fl.toFixed(1) + ' LUFS（目標 ' + target.toFixed(1) + '）' +
+      (diff > 1.0 ? ' ※リミッターの影響で目標との差が出ています。ラウド系を狙う場合は正常です。' : ''));
+    btn.disabled = false;
+    setTimeout(function(){ $('prog').style.display='none'; }, 900);
+    $('resultPanel').scrollIntoView({behavior:'smooth'});
+  }).catch(function(e){
+    console.error(e);
+    setStatus('処理に失敗しました：' + (e && e.message ? e.message : e), true);
+    btn.disabled = false;
+    $('prog').style.display='none';
+  });
+});
+
+// ---------- playback (A/B) ----------
+function currentBuf(){ return playMode === 'before' ? origBuffer : (masterBuffer || origBuffer); }
+
+function startPlayback(){
+  var buf = currentBuf();
+  if(!buf) return;
+  var ctx = getCtx();
+  playSrc = ctx.createBufferSource();
+  playSrc.buffer = buf;
+  playSrc.connect(ctx.destination);
+  if(playOffset >= buf.duration) playOffset = 0;
+  playSrc.start(0, playOffset);
+  playStartCtxTime = ctx.currentTime;
+  playing = true;
+  $('playBtn').textContent = '■';
+  playSrc.onended = function(){
+    if(playing && elapsed() >= currentBuf().duration - 0.15){
+      playing = false; playOffset = 0;
+      $('playBtn').textContent = '▶';
+      updatePlayUI();
+    }
+  };
+  tick();
+}
+function elapsed(){
+  return playing ? playOffset + (getCtx().currentTime - playStartCtxTime) : playOffset;
+}
+function stopPlayback(){
+  if(playSrc){ try{ playSrc.onended=null; playSrc.stop(); }catch(e){} playSrc=null; }
+  if(playing){ playOffset = elapsed(); }
+  playing = false;
+  $('playBtn').textContent = '▶';
+  if(rafId) cancelAnimationFrame(rafId);
+  updatePlayUI();
+}
+function tick(){
+  updatePlayUI();
+  if(playing) rafId = requestAnimationFrame(tick);
+}
+function updatePlayUI(){
+  var buf = currentBuf();
+  if(!buf) return;
+  var t = Math.min(elapsed(), buf.duration);
+  $('playFill').style.width = (t/buf.duration*100) + '%';
+  $('playTime').textContent = fmtTime(t) + ' / ' + fmtTime(buf.duration);
+}
+$('playBtn').addEventListener('click', function(){
+  if(playing) stopPlayback(); else startPlayback();
+});
+$('seekTrack').addEventListener('click', function(e){
+  var buf = currentBuf(); if(!buf) return;
+  var r = e.currentTarget.getBoundingClientRect();
+  var frac = (e.clientX - r.left) / r.width;
+  var wasPlaying = playing;
+  stopPlayback();
+  playOffset = Math.max(0, Math.min(buf.duration, frac*buf.duration));
+  updatePlayUI();
+  if(wasPlaying) startPlayback();
+});
+function switchAB(mode){
+  if(mode === playMode) return;
+  var wasPlaying = playing;
+  stopPlayback();
+  playMode = mode;
+  $('abBefore').classList.toggle('on', mode==='before');
+  $('abAfter').classList.toggle('on', mode==='after');
+  updatePlayUI();
+  if(wasPlaying) startPlayback();
+}
+$('abBefore').addEventListener('click', function(){ switchAB('before'); });
+$('abAfter').addEventListener('click', function(){ switchAB('after'); });
+
+// ---------- WAV export ----------
+function bufferToWav(buf){
+  var nCh = 2, SR = buf.sampleRate, len = buf.length;
+  var bytes = 44 + len*nCh*2;
+  var ab = new ArrayBuffer(bytes);
+  var dv = new DataView(ab);
+  function ws(o,s){ for(var i=0;i<s.length;i++) dv.setUint8(o+i, s.charCodeAt(i)); }
+  ws(0,'RIFF'); dv.setUint32(4, bytes-8, true); ws(8,'WAVE');
+  ws(12,'fmt '); dv.setUint32(16,16,true); dv.setUint16(20,1,true); dv.setUint16(22,nCh,true);
+  dv.setUint32(24,SR,true); dv.setUint32(28,SR*nCh*2,true); dv.setUint16(32,nCh*2,true); dv.setUint16(34,16,true);
+  ws(36,'data'); dv.setUint32(40, len*nCh*2, true);
+  var L = buf.getChannelData(0);
+  var R = buf.numberOfChannels > 1 ? buf.getChannelData(1) : L;
+  var o = 44;
+  for(var i=0;i<len;i++){
+    var l = Math.max(-1, Math.min(1, L[i]));
+    var r = Math.max(-1, Math.min(1, R[i]));
+    dv.setInt16(o, l<0 ? l*32768 : l*32767, true); o+=2;
+    dv.setInt16(o, r<0 ? r*32768 : r*32767, true); o+=2;
+  }
+  return new Blob([ab], {type:'audio/wav'});
+}
+
+function download(blob, name){
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 4000);
+}
+
+$('dlWav').addEventListener('click', function(){
+  if(!masterBuffer) return;
+  download(bufferToWav(masterBuffer), baseName + '_master.wav');
+});
+
+// ---------- 15s split → MP3 → ZIP ----------
+function setSegProg(pct, text){
+  $('segProg').style.display = 'block';
+  $('segProgFill').style.width = pct + '%';
+  $('segProgPct').textContent = pct + '%';
+  if(text) $('segProgText').textContent = text;
+}
+
+function f32toI16(f){
+  var out = new Int16Array(f.length);
+  for(var i=0;i<f.length;i++){
+    var v = Math.max(-1, Math.min(1, f[i]));
+    out[i] = v < 0 ? v*32768 : v*32767;
+  }
+  return out;
+}
+
+$('dlSeg').addEventListener('click', async function(){
+  if(!masterBuffer) return;
+  var btn = $('dlSeg');
+  btn.disabled = true;
+  try{
+    var SR = masterBuffer.sampleRate;
+    var segLen = 15 * SR;
+    var total = masterBuffer.length;
+    var nSeg = Math.ceil(total / segLen);
+    var L = masterBuffer.getChannelData(0);
+    var R = masterBuffer.numberOfChannels > 1 ? masterBuffer.getChannelData(1) : L;
+    var zip = new JSZip();
+    var CH = 1152;
+    for(var s=0; s<nSeg; s++){
+      var st = s*segLen, en = Math.min(total, st+segLen);
+      var enc = new lamejs.Mp3Encoder(2, SR, 320);
+      var parts = [];
+      var li = f32toI16(L.subarray(st, en));
+      var ri = f32toI16(R.subarray(st, en));
+      for(var i=0; i<li.length; i+=CH){
+        var d = enc.encodeBuffer(li.subarray(i, i+CH), ri.subarray(i, i+CH));
+        if(d.length) parts.push(new Uint8Array(d));
+        if((i / CH) % 60 === 0){
+          var pct = Math.round(((s + i/li.length) / nSeg) * 90);
+          setSegProg(pct, 'MP3エンコード中（' + (s+1) + '/' + nSeg + '）…');
+          await yieldUI();
+        }
+      }
+      var fin = enc.flush();
+      if(fin.length) parts.push(new Uint8Array(fin));
+      var num = ('0' + (s+1)).slice(-2);
+      zip.file(baseName + '_' + num + '.mp3', new Blob(parts, {type:'audio/mpeg'}));
+    }
+    setSegProg(95, 'ZIP作成中…');
+    var blob = await zip.generateAsync({type:'blob'});
+    setSegProg(100, '完了');
+    download(blob, baseName + '_15s_segments.zip');
+    setTimeout(function(){ $('segProg').style.display='none'; }, 1200);
+  }catch(e){
+    console.error(e);
+    setSegProg(0, 'エンコードに失敗しました');
+  }
+  btn.disabled = false;
+});
+
+positionTarget();
+})();
+</script>
+</body>
+</html>
